@@ -17,6 +17,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3002;
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || `${15 * 60 * 1000}`, 10);
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10);
 
 async function runMigrations() {
   await migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
@@ -62,6 +64,10 @@ async function bootstrap() {
   }
 }
 
+// Render/Cloudflare sit in front of the app in production. Without this,
+// express-rate-limit can treat all proxied traffic as one client.
+app.set('trust proxy', 1);
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
@@ -73,8 +79,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests' },
