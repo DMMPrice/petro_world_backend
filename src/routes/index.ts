@@ -1,0 +1,40 @@
+import { Router } from 'express';
+import authRouter from './auth';
+import productsRouter from './products';
+import categoriesRouter from './categories';
+import ordersRouter from './orders';
+import cartRouter from './cart';
+import wishlistRouter from './wishlist';
+import addressesRouter from './addresses';
+import reviewsRouter from './reviews';
+import profileRouter from './profile';
+import searchRouter from './search';
+import couponsRouter from './coupons';
+import supportRouter from './support';
+import paymentsRouter from './payments';
+import bannersRouter from './banners';
+import faqsRouter from './faqs';
+import settingsRouter from './settings';
+import adminRouter from './admin';
+
+const router = Router();
+
+router.use('/auth', authRouter);
+router.use('/products', productsRouter);
+router.use('/categories', categoriesRouter);
+router.use('/orders', ordersRouter);
+router.use('/cart', cartRouter);
+router.use('/wishlist', wishlistRouter);
+router.use('/addresses', addressesRouter);
+router.use('/reviews', reviewsRouter);
+router.use('/profile', profileRouter);
+router.use('/search', searchRouter);
+router.use('/coupons', couponsRouter);
+router.use('/support', supportRouter);
+router.use('/payments', paymentsRouter);
+router.use('/banners', bannersRouter);
+router.use('/faqs', faqsRouter);
+router.use('/settings', settingsRouter);
+router.use('/admin', adminRouter);
+
+export default router;
