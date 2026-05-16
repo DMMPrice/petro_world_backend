@@ -65,7 +65,7 @@ async function bootstrap() {
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
-    origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map((o) => o.trim()),
+    origin: true,
     credentials: true,
   })
 );
