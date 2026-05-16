@@ -6,9 +6,9 @@ import swaggerUi from 'swagger-ui-express';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Pool } from 'pg';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import bcrypt from 'bcrypt';
-import { pool } from './config/database';
+import { pool, db } from './config/database';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middleware/error';
 import routes from './routes/index';
@@ -18,38 +18,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-async function ensureDatabase() {
-  const dbName = process.env.DB_NAME || 'petroworld';
-
-  // Connect to default 'postgres' db to create our db if missing
-  const adminPool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: 'postgres',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD,
-    ssl: false,
-  });
-
-  try {
-    const { rowCount } = await adminPool.query(
-      'SELECT 1 FROM pg_database WHERE datname = $1', [dbName]
-    );
-    if (!rowCount) {
-      await adminPool.query(`CREATE DATABASE "${dbName}"`);
-      console.log(`✅ Created database '${dbName}'`);
-    }
-  } finally {
-    await adminPool.end();
-  }
-}
-
-async function runSchema() {
-  const schemaPath = path.join(__dirname, '../db/schema.sql');
-  if (!fs.existsSync(schemaPath)) return;
-  const sql = fs.readFileSync(schemaPath, 'utf8');
-  await pool.query(sql);
-  console.log('✅ Schema ready');
+async function runMigrations() {
+  await migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
+  console.log('✅ Migrations applied');
 }
 
 async function ensureAdmin() {
@@ -83,8 +54,7 @@ async function autoSeed() {
 
 async function bootstrap() {
   try {
-    await ensureDatabase();
-    await runSchema();
+    await runMigrations();
     await autoSeed();
   } catch (err) {
     console.error('❌ DB init failed:', err);
