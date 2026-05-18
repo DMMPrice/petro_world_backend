@@ -36,9 +36,6 @@ const router = Router();
  *                         type: string
  *                       image_url:
  *                         type: string
- *                       link:
- *                         type: string
- *                         nullable: true
  *                       active:
  *                         type: boolean
  *                       created_at:
@@ -48,7 +45,10 @@ const router = Router();
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT * FROM banners WHERE active = true ORDER BY created_at DESC`
+      `SELECT id, title, subtitle, image_url, active, created_at
+       FROM banners
+       WHERE active = true
+       ORDER BY created_at DESC`
     );
     res.json({ data: rows });
   } catch (err) {

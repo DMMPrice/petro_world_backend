@@ -343,7 +343,9 @@ INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALU
 INSERT INTO banners (title, subtitle, image_url, active) VALUES
   ('Petrol Station Uniforms', 'BPCL, HP & IOC style attendant uniforms — bulk discounts available', 'https://images.unsplash.com/photo-1594938298603-c8148c4b984b?w=1200&q=80', true),
   ('Safety Signboards Set', 'Complete 9-board bilingual set — Hindi & English', 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&q=80', true),
-  ('PVC Rubber Mats', 'Anti-slip blue coin-pattern mats for forecourts & offices', 'https://images.unsplash.com/photo-1609710228159-0fa9bd7c0827?w=1200&q=80', true);
+  ('PVC Rubber Mats', 'Anti-slip blue coin-pattern mats for forecourts & offices', 'https://images.unsplash.com/photo-1609710228159-0fa9bd7c0827?w=1200&q=80', true),
+  ('Lubricants Weekend Sale', 'Save on engine oils and dispensing cans', 'https://images.unsplash.com/photo-1581093458791-9d09d03ec7b1?w=1200&q=80', true),
+  ('New Station Setup Packs', 'Uniforms, mats, signboards and accessories in one order', 'https://images.unsplash.com/photo-1542362567-b07e54358753?w=1200&q=80', true);
 
 -- Coupons
 INSERT INTO coupons (code, discount_type, discount_value, active, expiry, min_order_value) VALUES
@@ -361,7 +363,11 @@ INSERT INTO faqs (question, answer, sort_order) VALUES
   ('What is your return policy?', 'We accept returns within 7 days of delivery for items in original unused condition. Custom-printed or personalised products cannot be returned.', 5),
   ('How long does delivery take?', 'Standard delivery 3–5 business days. Major cities (Delhi, Mumbai, Chennai, Kolkata, Bangalore, Hyderabad) receive delivery in 2–3 days.', 6),
   ('Can I get uniforms with our station logo printed?', 'Yes, we offer custom logo printing/embroidery on uniforms. Minimum order 10 pieces for custom branding. Contact support for artwork requirements and pricing.', 7),
-  ('Do you accept Cash on Delivery?', 'Yes, COD available across India. We also accept UPI, cards, and net banking via Razorpay.', 8);
+  ('Do you accept Cash on Delivery?', 'Yes, COD available across India. We also accept UPI, cards, and net banking via Razorpay.', 8),
+  ('Can I edit my delivery address after placing an order?', 'Please contact support as soon as possible. If the order has not shipped yet, we can usually update the address for you.', 9),
+  ('How do I track my order?', 'Open the Orders section in the app to view the latest order status and tracking details once the shipment is created.', 10),
+  ('Are GST invoices available?', 'Yes. GST invoice details can be shared with support after ordering and will be included where applicable.', 11),
+  ('Do you support repeat bulk purchases?', 'Yes. Petrol stations and distributors can reorder frequently used items and contact support for recurring bulk pricing.', 12);
 
 -- Settings
 INSERT INTO settings (key, value) VALUES

@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS banners (
   title TEXT,
   subtitle TEXT,
   image_url TEXT NOT NULL,
-  link TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

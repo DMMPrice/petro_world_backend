@@ -75,7 +75,6 @@ export const banners = pgTable('banners', {
   title: text('title'),
   subtitle: text('subtitle'),
   image_url: text('image_url').notNull(),
-  link: text('link'),
   active: boolean('active').notNull().default(true),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

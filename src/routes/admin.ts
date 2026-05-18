@@ -284,6 +284,35 @@ router.get('/sub-categories', async (_req: Request, res: Response, next: NextFun
   } catch (err) { next(err); }
 });
 
+router.post('/sub-categories', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { title, category_id } = req.body;
+    const { rows } = await pool.query(
+      'INSERT INTO sub_categories (title, category_id) VALUES ($1,$2) RETURNING *',
+      [title, category_id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.patch('/sub-categories/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { title, category_id } = req.body;
+    const { rows } = await pool.query(
+      'UPDATE sub_categories SET title=$1, category_id=$2 WHERE id=$3 RETURNING *',
+      [title, category_id, req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/sub-categories/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await pool.query('DELETE FROM sub_categories WHERE id = $1', [req.params.id]);
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
 router.post('/categories', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { title, icon } = req.body;
@@ -350,17 +379,19 @@ router.delete('/coupons/:id', async (req: Request, res: Response, next: NextFunc
 // ─── BANNERS ─────────────────────────────────────────────────────────────────
 router.get('/banners', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM banners ORDER BY created_at DESC');
+    const { rows } = await pool.query(
+      'SELECT id, title, subtitle, image_url, active, created_at FROM banners ORDER BY created_at DESC'
+    );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
 router.post('/banners', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { title, subtitle, image_url, link, active } = req.body;
+    const { title, subtitle, image_url, active } = req.body;
     const { rows } = await pool.query(
-      'INSERT INTO banners (title, subtitle, image_url, link, active) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [title, subtitle, image_url, link, active ?? true]
+      'INSERT INTO banners (title, subtitle, image_url, active) VALUES ($1,$2,$3,$4) RETURNING id, title, subtitle, image_url, active, created_at',
+      [title, subtitle, image_url, active ?? true]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -368,11 +399,11 @@ router.post('/banners', async (req: Request, res: Response, next: NextFunction) 
 
 router.patch('/banners/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const allowed = ['title','subtitle','image_url','link','active'];
+    const allowed = ['title','subtitle','image_url','active'];
     const fields = Object.keys(req.body).filter(k => allowed.includes(k));
     const sets = fields.map((f, i) => `${f} = $${i + 2}`).join(', ');
     const { rows } = await pool.query(
-      `UPDATE banners SET ${sets} WHERE id = $1 RETURNING *`,
+      `UPDATE banners SET ${sets} WHERE id = $1 RETURNING id, title, subtitle, image_url, active, created_at`,
       [req.params.id, ...fields.map(f => req.body[f])]
     );
     res.json(rows[0]);
@@ -382,6 +413,56 @@ router.patch('/banners/:id', async (req: Request, res: Response, next: NextFunct
 router.delete('/banners/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await pool.query('DELETE FROM banners WHERE id = $1', [req.params.id]);
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+// ─── ADDRESSES ───────────────────────────────────────────────────────────────
+router.get('/addresses', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT a.*, u.email, u.first_name, u.last_name
+      FROM addresses a
+      JOIN users u ON u.id = a.user_id
+      ORDER BY a.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.patch('/addresses/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const allowed = ['name','phone','address_line1','address_line2','city','state','pincode','is_default'];
+    const fields = Object.keys(req.body).filter(k => allowed.includes(k));
+    if (fields.length === 0) {
+      res.status(400).json({ error: 'No valid fields provided to update' });
+      return;
+    }
+    if (req.body.is_default) {
+      const current = await pool.query('SELECT user_id FROM addresses WHERE id = $1', [req.params.id]);
+      if (current.rows[0]) {
+        await pool.query(
+          'UPDATE addresses SET is_default = false WHERE user_id = $1 AND id <> $2',
+          [current.rows[0].user_id, req.params.id]
+        );
+      }
+    }
+    const sets = fields.map((f, i) => `${f} = $${i + 2}`).join(', ');
+    const { rows } = await pool.query(
+      `UPDATE addresses SET ${sets} WHERE id = $1 RETURNING *`,
+      [req.params.id, ...fields.map(f => req.body[f])]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Address not found' });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/addresses/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await pool.query('DELETE FROM addresses WHERE id = $1', [req.params.id]);
     res.status(204).send();
   } catch (err) { next(err); }
 });
@@ -468,12 +549,46 @@ router.post('/faqs', async (req: Request, res: Response, next: NextFunction) => 
 
 router.patch('/faqs/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { question, answer, is_active, sort_order } = req.body;
+    const allowed = ['question', 'answer', 'is_active', 'sort_order'];
+    const fields = Object.keys(req.body).filter((key) => allowed.includes(key));
+    if (fields.length === 0) {
+      res.status(400).json({ error: 'No valid fields provided to update' });
+      return;
+    }
+    const sets = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
     const { rows } = await pool.query(
-      'UPDATE faqs SET question=$1, answer=$2, is_active=$3, sort_order=$4 WHERE id=$5 RETURNING *',
-      [question, answer, is_active, sort_order, req.params.id]
+      `UPDATE faqs SET ${sets} WHERE id = $1 RETURNING *`,
+      [req.params.id, ...fields.map((field) => req.body[field])]
     );
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
+router.get('/notifications', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100'
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/notifications', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { title, body, user_id } = req.body;
+    const { rows } = await pool.query(
+      'INSERT INTO notifications (title, body, user_id) VALUES ($1,$2,$3) RETURNING *',
+      [title, body, user_id || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/notifications/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await pool.query('DELETE FROM notifications WHERE id = $1', [req.params.id]);
+    res.status(204).send();
   } catch (err) { next(err); }
 });
 

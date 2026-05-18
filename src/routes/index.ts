@@ -16,6 +16,7 @@ import bannersRouter from './banners';
 import faqsRouter from './faqs';
 import settingsRouter from './settings';
 import adminRouter from './admin';
+import notificationsRouter from './notifications';
 
 const router = Router();
 
@@ -36,5 +37,6 @@ router.use('/banners', bannersRouter);
 router.use('/faqs', faqsRouter);
 router.use('/settings', settingsRouter);
 router.use('/admin', adminRouter);
+router.use('/notifications', notificationsRouter);
 
 export default router;

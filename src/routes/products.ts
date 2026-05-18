@@ -3,6 +3,20 @@ import { pool } from '../config/database';
 
 const router = Router();
 
+function withResolvedImages<T extends Record<string, any>>(product: T): T & { images: string[] } {
+  const images = Array.from(
+    new Set(
+      [
+        product.image_url,
+        ...(Array.isArray(product.gallery_urls) ? product.gallery_urls : []),
+        ...(Array.isArray(product.images) ? product.images : []),
+      ].filter(Boolean)
+    )
+  ) as string[];
+
+  return { ...product, images };
+}
+
 /**
  * @swagger
  * tags:
@@ -74,7 +88,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       params
     );
 
-    res.json({ data: rows });
+    res.json({ data: rows.map(withResolvedImages) });
   } catch (err) {
     next(err);
   }
@@ -109,7 +123,7 @@ router.get('/trending', async (_req: Request, res: Response, next: NextFunction)
        ORDER BY p.created_at DESC
        LIMIT 10`
     );
-    res.json({ data: rows });
+    res.json({ data: rows.map(withResolvedImages) });
   } catch (err) {
     next(err);
   }
@@ -177,7 +191,7 @@ router.get('/search', async (req: Request, res: Response, next: NextFunction) =>
       [`%${q}%`, parseInt(limit as string, 10), parseInt(offset as string, 10)]
     );
 
-    res.json({ data: rows });
+    res.json({ data: rows.map(withResolvedImages) });
   } catch (err) {
     next(err);
   }
@@ -231,7 +245,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    res.json({ data: rows[0] });
+    res.json({ data: withResolvedImages(rows[0]) });
   } catch (err) {
     next(err);
   }
@@ -311,7 +325,7 @@ router.get('/:id/related', async (req: Request, res: Response, next: NextFunctio
     }
 
     const { rows } = await pool.query(queryText, queryParams);
-    res.json({ data: rows });
+    res.json({ data: rows.map(withResolvedImages) });
   } catch (err) {
     next(err);
   }

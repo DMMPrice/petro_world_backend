@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS "banners" (
 	"title" text,
 	"subtitle" text,
 	"image_url" text NOT NULL,
-	"link" text,
 	"active" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
