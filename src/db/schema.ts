@@ -20,6 +20,8 @@ export const users = pgTable('users', {
   phone: text('phone'),
   avatar_url: text('avatar_url'),
   role: text('role').notNull().default('customer'),
+  dob: timestamp('dob', { withTimezone: true }),
+  gender: text('gender'),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

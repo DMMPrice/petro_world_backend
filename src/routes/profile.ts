@@ -53,7 +53,7 @@ const router = Router();
 router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, phone, avatar_url, role, created_at, updated_at
+      `SELECT id, email, first_name, last_name, phone, avatar_url, role, dob, gender, created_at, updated_at
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -73,6 +73,8 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
         phone: user.phone,
         email: user.email,
         role: user.role,
+        dob: user.dob,
+        gender: user.gender,
         created_at: user.created_at,
         updated_at: user.updated_at
       }
@@ -128,10 +130,17 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
  */
 router.patch('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const allowed = ['first_name', 'last_name', 'phone', 'avatar_url'];
+    const allowed = ['first_name', 'last_name', 'phone', 'avatar_url', 'dob', 'gender'];
     
-    // In case the client sends full_name, let's split it into first_name and last_name
     const body = { ...req.body };
+    
+    // Map phone_number from app/client to phone in DB
+    if (body.phone_number && !body.phone) {
+      body.phone = body.phone_number;
+      delete body.phone_number;
+    }
+
+    // In case the client sends full_name, let's split it into first_name and last_name
     if (body.full_name && !body.first_name && !body.last_name) {
       const parts = body.full_name.trim().split(/\s+/);
       body.first_name = parts[0] || '';
@@ -154,7 +163,7 @@ router.patch('/', requireAuth, async (req: Request, res: Response, next: NextFun
       `UPDATE users
        SET ${setClauses}, updated_at = NOW()
        WHERE id = $${values.length}
-       RETURNING id, email, first_name, last_name, phone, avatar_url, role, created_at, updated_at`,
+       RETURNING id, email, first_name, last_name, phone, avatar_url, role, dob, gender, created_at, updated_at`,
       values
     );
 
@@ -174,6 +183,8 @@ router.patch('/', requireAuth, async (req: Request, res: Response, next: NextFun
         phone: user.phone,
         email: user.email,
         role: user.role,
+        dob: user.dob,
+        gender: user.gender,
         created_at: user.created_at,
         updated_at: user.updated_at
       }
