@@ -60,10 +60,10 @@ router.get('/:productId', async (req: Request, res: Response, next: NextFunction
 
     const { rows } = await pool.query(
       `SELECT r.*,
-              p.full_name AS reviewer_name,
-              p.avatar_url AS reviewer_avatar
+              TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS reviewer_name,
+              u.avatar_url AS reviewer_avatar
        FROM reviews r
-       LEFT JOIN profiles p ON r.user_id = p.id
+       LEFT JOIN users u ON r.user_id = u.id
        WHERE r.product_id = $1
        ORDER BY r.created_at DESC`,
       [productId]

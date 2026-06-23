@@ -53,10 +53,30 @@ const router = Router();
 router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT * FROM profiles WHERE id = $1`,
+      `SELECT id, email, first_name, last_name, phone, avatar_url, role, created_at, updated_at
+       FROM users
+       WHERE id = $1`,
       [req.user.id]
     );
-    res.json({ data: rows[0] || null });
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Profile not found' });
+      return;
+    }
+    const user = rows[0];
+    res.json({
+      data: {
+        id: user.id,
+        full_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar_url: user.avatar_url,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      }
+    });
   } catch (err) {
     next(err);
   }
@@ -108,8 +128,18 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
  */
 router.patch('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const allowed = ['full_name', 'avatar_url', 'phone'];
-    const updates = Object.entries(req.body).filter(([key]) => allowed.includes(key));
+    const allowed = ['first_name', 'last_name', 'phone', 'avatar_url'];
+    
+    // In case the client sends full_name, let's split it into first_name and last_name
+    const body = { ...req.body };
+    if (body.full_name && !body.first_name && !body.last_name) {
+      const parts = body.full_name.trim().split(/\s+/);
+      body.first_name = parts[0] || '';
+      body.last_name = parts.slice(1).join(' ') || '';
+      delete body.full_name;
+    }
+
+    const updates = Object.entries(body).filter(([key]) => allowed.includes(key));
 
     if (updates.length === 0) {
       res.status(400).json({ error: 'No valid fields provided to update' });
@@ -121,13 +151,33 @@ router.patch('/', requireAuth, async (req: Request, res: Response, next: NextFun
     values.push(req.user.id);
 
     const { rows } = await pool.query(
-      `UPDATE profiles SET ${setClauses}, updated_at = NOW()
+      `UPDATE users
+       SET ${setClauses}, updated_at = NOW()
        WHERE id = $${values.length}
-       RETURNING *`,
+       RETURNING id, email, first_name, last_name, phone, avatar_url, role, created_at, updated_at`,
       values
     );
 
-    res.json({ data: rows[0] || null });
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Profile not found' });
+      return;
+    }
+
+    const user = rows[0];
+    res.json({
+      data: {
+        id: user.id,
+        full_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        first_name: user.first_name,
+        last_name: user.last_name,
+        avatar_url: user.avatar_url,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      }
+    });
   } catch (err) {
     next(err);
   }
