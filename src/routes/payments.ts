@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth';
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { pool } from '../config/database';
+import { validateOrderPricing } from '../utils/pricing';
 
 const router = Router();
 
@@ -101,7 +102,6 @@ router.post(
   '/verify-razorpay',
   requireAuth,
   async (req: Request, res: Response, next: NextFunction) => {
-    const client = await pool.connect();
     try {
       const keySecret = process.env.RAZORPAY_KEY_SECRET;
       if (!keySecret) {
@@ -127,13 +127,25 @@ router.post(
         return;
       }
 
-      // ── Signature verification ──────────────────────────────────────────
+      // ── Signature verification (Timing attack safe) ──────────────────────
       const expectedSig = crypto
         .createHmac('sha256', keySecret)
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
         .digest('hex');
 
-      if (expectedSig !== razorpay_signature) {
+      const expectedBuffer = Buffer.from(expectedSig, 'hex');
+      let signatureBuffer: Buffer;
+      try {
+        signatureBuffer = Buffer.from(razorpay_signature, 'hex');
+      } catch {
+        res.status(400).json({ error: 'Invalid payment signature format.' });
+        return;
+      }
+
+      if (
+        expectedBuffer.length !== signatureBuffer.length ||
+        !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+      ) {
         res.status(400).json({ error: 'Invalid payment signature. Payment may be fraudulent.' });
         return;
       }
@@ -144,50 +156,78 @@ router.post(
         return;
       }
 
-      await client.query('BEGIN');
-
-      const orderNumber = `PW-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-      const { rows: orderRows } = await client.query(
-        `INSERT INTO orders
-           (user_id, address_id, total_amount, status, order_number,
-            payment_method, razorpay_payment_id, coupon_id, coupon_discount)
-         VALUES ($1, $2, $3, 'ordered', $4, 'Razorpay', $5, $6, $7)
-         RETURNING *`,
-        [
-          req.user.id,
-          addressId,
-          total,
-          orderNumber,
-          razorpay_payment_id,
-          couponId ?? null,
-          couponDiscount ?? 0,
-        ]
+      // Validate the order pricing and stock server-side
+      const pricingResult = await validateOrderPricing(
+        items,
+        couponId,
+        Number(total),
+        Number(couponDiscount || 0)
       );
 
-      const order = orderRows[0];
-
-      for (const item of items as { productId: string; quantity: number; price: number }[]) {
-        await client.query(
-          `INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
-           VALUES ($1, $2, $3, $4)`,
-          [order.id, item.productId, item.quantity, item.price]
-        );
-        await client.query(
-          `UPDATE products
-           SET stock_quantity = GREATEST(stock_quantity - $1, 0)
-           WHERE id = $2`,
-          [item.quantity, item.productId]
-        );
+      if (!pricingResult.valid) {
+        res.status(400).json({ error: pricingResult.error });
+        return;
       }
 
-      await client.query('COMMIT');
-      res.status(201).json({ data: order });
+      // Fetch the order from Razorpay to verify the paid amount
+      const razorpayOrder = await razorpayRequest('GET', `/orders/${razorpay_order_id}`);
+      const expectedAmountInPaise = Math.round(pricingResult.total * 100);
+      if (Math.abs(razorpayOrder.amount - expectedAmountInPaise) > 5) {
+        res.status(400).json({
+          error: `Payment amount discrepancy. Expected ${expectedAmountInPaise} paise, but order was registered for ${razorpayOrder.amount} paise.`,
+        });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const orderNumber = `PW-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        const { rows: orderRows } = await client.query(
+          `INSERT INTO orders
+             (user_id, address_id, total_amount, status, order_number,
+              payment_method, razorpay_payment_id, coupon_id, coupon_discount)
+           VALUES ($1, $2, $3, 'ordered', $4, 'Razorpay', $5, $6, $7)
+           RETURNING *`,
+          [
+            req.user.id,
+            addressId,
+            pricingResult.total,
+            orderNumber,
+            razorpay_payment_id,
+            couponId ?? null,
+            pricingResult.couponDiscount,
+          ]
+        );
+
+        const order = orderRows[0];
+
+        for (const item of pricingResult.verifiedItems) {
+          await client.query(
+            `INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
+             VALUES ($1, $2, $3, $4)`,
+            [order.id, item.productId, item.quantity, item.price]
+          );
+          await client.query(
+            `UPDATE products
+             SET stock_quantity = GREATEST(stock_quantity - $1, 0)
+             WHERE id = $2`,
+            [item.quantity, item.productId]
+          );
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json({ data: order });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     } catch (err) {
-      await client.query('ROLLBACK');
       next(err);
-    } finally {
-      client.release();
     }
   }
 );

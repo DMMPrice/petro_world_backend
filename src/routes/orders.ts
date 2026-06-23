@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { requireAuth } from '../middleware/auth';
+import { validateOrderPricing } from '../utils/pricing';
 
 const router = Router();
 
@@ -138,7 +139,6 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
  *               $ref: '#/components/schemas/Error'
  */
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
-  const client = await pool.connect();
   try {
     const { addressId, total, items, paymentMethod, orderNumber, couponId, couponDiscount } =
       req.body;
@@ -150,48 +150,66 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
       return;
     }
 
-    await client.query('BEGIN');
-
-    const generatedOrderNumber =
-      orderNumber || `PW-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-    const { rows: orderRows } = await client.query(
-      `INSERT INTO orders (user_id, address_id, total_amount, status, order_number, payment_method, coupon_id, coupon_discount)
-       VALUES ($1, $2, $3, 'ordered', $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        req.user.id,
-        addressId,
-        total,
-        generatedOrderNumber,
-        paymentMethod,
-        couponId || null,
-        couponDiscount || 0,
-      ]
+    // Validate the order pricing and stock server-side
+    const pricingResult = await validateOrderPricing(
+      items,
+      couponId,
+      Number(total),
+      Number(couponDiscount || 0)
     );
 
-    const order = orderRows[0];
-
-    for (const item of items as { productId: string; quantity: number; price: number }[]) {
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
-         VALUES ($1, $2, $3, $4)`,
-        [order.id, item.productId, item.quantity, item.price]
-      );
-
-      await client.query(
-        `UPDATE products SET stock_quantity = GREATEST(stock_quantity - $1, 0) WHERE id = $2`,
-        [item.quantity, item.productId]
-      );
+    if (!pricingResult.valid) {
+      res.status(400).json({ error: pricingResult.error });
+      return;
     }
 
-    await client.query('COMMIT');
-    res.status(201).json({ data: order });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const generatedOrderNumber =
+        orderNumber || `PW-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      const { rows: orderRows } = await client.query(
+        `INSERT INTO orders (user_id, address_id, total_amount, status, order_number, payment_method, coupon_id, coupon_discount)
+         VALUES ($1, $2, $3, 'ordered', $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          req.user.id,
+          addressId,
+          pricingResult.total,
+          generatedOrderNumber,
+          paymentMethod,
+          couponId || null,
+          pricingResult.couponDiscount,
+        ]
+      );
+
+      const order = orderRows[0];
+
+      for (const item of pricingResult.verifiedItems) {
+        await client.query(
+          `INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
+           VALUES ($1, $2, $3, $4)`,
+          [order.id, item.productId, item.quantity, item.price]
+        );
+
+        await client.query(
+          `UPDATE products SET stock_quantity = GREATEST(stock_quantity - $1, 0) WHERE id = $2`,
+          [item.quantity, item.productId]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json({ data: order });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
-    await client.query('ROLLBACK');
     next(err);
-  } finally {
-    client.release();
   }
 });
 

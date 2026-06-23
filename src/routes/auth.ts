@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { authRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -52,7 +53,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password, firstName, lastName } = req.body;
     if (!email || !password || !firstName) {
@@ -123,7 +124,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
  *       401:
  *         description: Invalid credentials
  */
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

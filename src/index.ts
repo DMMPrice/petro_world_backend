@@ -26,15 +26,23 @@ async function runMigrations() {
 }
 
 async function ensureAdmin() {
-  const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin@petroworld.in']);
+  const adminEmail = process.env.DEFAULT_ADMIN_EMAIL;
+  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+
+  if (!adminEmail || !adminPassword) {
+    console.warn('⚠️  DEFAULT_ADMIN_EMAIL or DEFAULT_ADMIN_PASSWORD not set in environment. Skipping automatic admin setup.');
+    return;
+  }
+
+  const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', [adminEmail]);
   if ((adminCheck.rowCount ?? 0) === 0) {
-    const hash = await bcrypt.hash('Admin@123', 10);
+    const hash = await bcrypt.hash(adminPassword, 10);
     await pool.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role)
        VALUES ($1, $2, 'Admin', 'PetroWorld', 'admin')`,
-      ['admin@petroworld.in', hash]
+      [adminEmail, hash]
     );
-    console.log('👤 Admin created: admin@petroworld.in / Admin@123');
+    console.log(`👤 Admin created: ${adminEmail}`);
   }
 }
 
@@ -68,10 +76,41 @@ async function bootstrap() {
 // express-rate-limit can treat all proxied traffic as one client.
 app.set('trust proxy', 1);
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        connectSrc: [
+          "'self'",
+          "http://localhost:*",
+          "ws://localhost:*",
+          "http://127.0.0.1:*",
+          "ws://127.0.0.1:*",
+          "https://*.idx.dev",
+          "wss://*.idx.dev",
+        ],
+        imgSrc: ["'self'", "data:", "blob:"],
+        fontSrc: ["'self'", "data:"],
+      },
+    },
+  })
+);
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  : [];
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   })
 );
@@ -97,6 +136,21 @@ app.use(
   })
 );
 app.get('/api-docs.json', (_req, res) => res.json(swaggerSpec));
+
+// Support Chrome DevTools Workspace association
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (_req, res) => {
+  res.json({
+    workspace: {
+      root: path.resolve(__dirname, '../'),
+      uuid: '8e80b4ce-67d6-47b5-b0a8-6a70ff42d004',
+    },
+  });
+});
+
+// Root redirect to API Docs to prevent 404 and associated sandboxed CSP errors
+app.get('/', (_req, res) => {
+  res.redirect('/api-docs');
+});
 
 // Health check
 app.get('/health', (_req, res) =>
