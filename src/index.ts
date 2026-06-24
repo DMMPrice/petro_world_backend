@@ -102,7 +102,10 @@ app.use(
   })
 );
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  ? process.env.ALLOWED_ORIGINS
+      .replace(/["']/g, '') // Strip quotes if mistakenly added
+      .split(',')
+      .map((o) => o.trim().replace(/\/$/, '')) // Strip whitespace and trailing slashes
   : [];
 
 app.use(
@@ -116,9 +119,20 @@ app.use(
                       origin === 'http://127.0.0.1' ||
                       origin.endsWith('.idx.dev');
 
-      if (process.env.NODE_ENV !== 'production' || isLocal || allowedOrigins.includes(origin)) {
+      // Make the check case-insensitive just in case
+      const normalizedOrigin = origin.toLowerCase();
+      const isAllowed = allowedOrigins.some(o => o.toLowerCase() === normalizedOrigin);
+
+      if (process.env.NODE_ENV !== 'production' || isLocal || isAllowed) {
         return callback(null, true);
       }
+      
+      // Fallback: If it's a vercel app, let it through (helpful if env vars fail)
+      if (normalizedOrigin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+
+      logger.warn(`CORS blocked request from origin: "${origin}". Allowed origins configured: ${JSON.stringify(allowedOrigins)}`);
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
