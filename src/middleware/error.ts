@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import logger from '../utils/logger';
 
 export function errorHandler(
   err: Error & { status?: number },
@@ -9,7 +10,7 @@ export function errorHandler(
   const status = err.status || 500;
 
   // Log the complete error trace to server console
-  console.error('Error occurred:', err);
+  logger.error(`Error occurred: ${err.message}`, { stack: err.stack });
 
   const isProduction = process.env.NODE_ENV === 'production';
   const message = (status === 500 && isProduction)

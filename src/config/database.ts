@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import dotenv from 'dotenv';
 import * as schema from '../db/schema';
+import logger from '../utils/logger';
 
 dotenv.config();
 
@@ -21,5 +22,5 @@ export const pool = new Pool(connectionConfig);
 export const db = drizzle(pool, { schema });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  logger.error(`Unexpected error on idle client: ${err.message}`, { stack: err.stack });
 });

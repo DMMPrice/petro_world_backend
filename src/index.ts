@@ -12,6 +12,8 @@ import { pool, db } from './config/database';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middleware/error';
 import routes from './routes/index';
+import morgan from 'morgan';
+import logger from './utils/logger';
 
 dotenv.config();
 
@@ -22,7 +24,7 @@ const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '500', 10);
 
 async function runMigrations() {
   await migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
-  console.log('✅ Migrations applied');
+  logger.info('✅ Migrations applied');
 }
 
 async function ensureAdmin() {
@@ -30,7 +32,7 @@ async function ensureAdmin() {
   const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
 
   if (!adminEmail || !adminPassword) {
-    console.warn('⚠️  DEFAULT_ADMIN_EMAIL or DEFAULT_ADMIN_PASSWORD not set in environment. Skipping automatic admin setup.');
+    logger.warn('⚠️  DEFAULT_ADMIN_EMAIL or DEFAULT_ADMIN_PASSWORD not set in environment. Skipping automatic admin setup.');
     return;
   }
 
@@ -42,7 +44,7 @@ async function ensureAdmin() {
        VALUES ($1, $2, 'Admin', 'PetroWorld', 'admin')`,
       [adminEmail, hash]
     );
-    console.log(`👤 Admin created: ${adminEmail}`);
+    logger.info(`👤 Admin created: ${adminEmail}`);
   }
 }
 
@@ -52,11 +54,11 @@ async function autoSeed() {
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM products');
   if (rows[0].count > 0) {
-    console.log(`ℹ️  Database already has ${rows[0].count} products — skipping seed`);
+    logger.info(`ℹ️  Database already has ${rows[0].count} products — skipping seed`);
   } else {
     const sql = fs.readFileSync(seedPath, 'utf8');
     await pool.query(sql);
-    console.log('🌱 Database seeded with sample data');
+    logger.info('🌱 Database seeded with sample data');
   }
 
   await ensureAdmin();
@@ -67,7 +69,7 @@ async function bootstrap() {
     await runMigrations();
     await autoSeed();
   } catch (err) {
-    console.error('❌ DB init failed:', err);
+    logger.error(`❌ DB init failed: ${err}`);
     process.exit(1);
   }
 }
@@ -134,6 +136,17 @@ app.use(
   })
 );
 
+// HTTP Logging Middleware
+const morganMiddleware = morgan(
+  ':method :url :status :res[content-length] - :response-time ms',
+  {
+    stream: {
+      write: (message) => logger.http(message.trim()),
+    },
+  }
+);
+app.use(morganMiddleware);
+
 // Swagger UI
 app.use(
   '/api-docs',
@@ -172,8 +185,8 @@ app.use(errorHandler);
 
 bootstrap().then(() => {
   app.listen(PORT, () => {
-    console.log(`\n🚀 PetroWorld backend running on http://localhost:${PORT}`);
-    console.log(`📖 Swagger docs at http://localhost:${PORT}/api-docs\n`);
+    logger.info(`🚀 PetroWorld backend running on http://localhost:${PORT}`);
+    logger.info(`📖 Swagger docs at http://localhost:${PORT}/api-docs`);
   });
 });
 
