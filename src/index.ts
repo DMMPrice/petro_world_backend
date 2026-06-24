@@ -91,6 +91,7 @@ app.use(
           "ws://127.0.0.1:*",
           "https://*.idx.dev",
           "wss://*.idx.dev",
+          "https://petro-world-admin-green.vercel.app",
         ],
         imgSrc: ["'self'", "data:", "blob:"],
         fontSrc: ["'self'", "data:"],
@@ -106,7 +107,14 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
+      
+      const isLocal = origin.startsWith('http://localhost:') || 
+                      origin.startsWith('http://127.0.0.1:') ||
+                      origin === 'http://localhost' || 
+                      origin === 'http://127.0.0.1' ||
+                      origin.endsWith('.idx.dev');
+
+      if (process.env.NODE_ENV !== 'production' || isLocal || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
       return callback(new Error('Not allowed by CORS'));
