@@ -200,6 +200,12 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
         );
       }
 
+      // Clear user's cart since the order has been successfully placed
+      await client.query(
+        `DELETE FROM carts WHERE user_id = $1`,
+        [req.user.id]
+      );
+
       await client.query('COMMIT');
       res.status(201).json({ data: order });
     } catch (err) {
