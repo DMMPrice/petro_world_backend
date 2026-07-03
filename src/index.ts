@@ -197,11 +197,18 @@ app.use('/api/v1', routes);
 
 app.use(errorHandler);
 
-bootstrap().then(() => {
+const start = () => {
   app.listen(PORT, () => {
     logger.info(`🚀 PetroWorld backend running on http://localhost:${PORT}`);
     logger.info(`📖 Swagger docs at http://localhost:${PORT}/api-docs`);
   });
-});
+};
+
+if (process.env.SKIP_DB_BOOTSTRAP === 'true') {
+  logger.warn('⚠️  SKIP_DB_BOOTSTRAP=true — skipping migrations and seed on startup.');
+  start();
+} else {
+  bootstrap().then(start);
+}
 
 export default app;

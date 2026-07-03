@@ -255,22 +255,49 @@ router.post('/:id/cancel', requireAuth, async (req: Request, res: Response, next
   try {
     const { id } = req.params;
 
-    const { rows } = await pool.query(
-      `SELECT id FROM orders WHERE id = $1 AND user_id = $2`,
-      [id, req.user.id]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (rows.length === 0) {
-      res.status(404).json({ error: 'Order not found' });
-      return;
+      const { rows } = await client.query(
+        `SELECT id, status FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [id, req.user.id]
+      );
+
+      if (rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      const status = rows[0].status?.toString().toLowerCase();
+      if (!['ordered', 'processing'].includes(status)) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ error: 'Only ordered or processing orders can be cancelled' });
+        return;
+      }
+
+      await client.query(
+        `UPDATE products p
+         SET stock_quantity = p.stock_quantity + oi.quantity
+         FROM order_items oi
+         WHERE oi.order_id = $1 AND oi.product_id = p.id`,
+        [id]
+      );
+
+      await client.query(
+        `UPDATE orders SET status = 'canceled' WHERE id = $1`,
+        [id]
+      );
+
+      await client.query('COMMIT');
+      res.json({ message: 'Order cancelled successfully' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    await pool.query(
-      `UPDATE orders SET status = 'canceled' WHERE id = $1`,
-      [id]
-    );
-
-    res.json({ message: 'Order cancelled successfully' });
   } catch (err) {
     next(err);
   }
