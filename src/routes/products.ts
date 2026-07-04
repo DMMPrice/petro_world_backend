@@ -3,6 +3,27 @@ import { pool } from '../config/database';
 
 const router = Router();
 
+const PRODUCT_SUMMARY_SELECT = `
+  p.id,
+  p.title,
+  p.brand_name,
+  p.price,
+  p.price_after_discount,
+  p.discount_type,
+  p.discount_value,
+  p.discount_percent,
+  p.image_url,
+  p.stock_quantity,
+  p.category_id,
+  p.sub_category_id,
+  p.rating,
+  p.num_reviews,
+  p.created_at,
+  p.updated_at,
+  c.title AS category_title,
+  sc.title AS sub_category_title
+`;
+
 function withResolvedImages<T extends Record<string, any>>(product: T): T & { images: string[] } {
   const images = Array.from(
     new Set(
@@ -15,6 +36,16 @@ function withResolvedImages<T extends Record<string, any>>(product: T): T & { im
   ) as string[];
 
   return { ...product, images };
+}
+
+function withCardImages<T extends Record<string, any>>(product: T): T & { images: string[] } {
+  return { ...product, gallery_urls: [], images: [] };
+}
+
+function parsePaginationValue(value: unknown, fallback: number, max: number): number {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.min(parsed, max);
 }
 
 /**
@@ -68,16 +99,18 @@ function withResolvedImages<T extends Record<string, any>>(product: T): T & { im
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { categoryId, categoryName, limit = '20', offset = '0' } = req.query;
+    const safeLimit = parsePaginationValue(limit, 20, 50);
+    const safeOffset = parsePaginationValue(offset, 0, 100000);
 
     const params: unknown[] = [
       categoryId || null,
-      parseInt(limit as string, 10),
-      parseInt(offset as string, 10),
+      safeLimit,
+      safeOffset,
       categoryName ? `%${categoryName}%` : null,
     ];
 
     const { rows } = await pool.query(
-      `SELECT p.*, c.title AS category_title, sc.title AS sub_category_title
+      `SELECT ${PRODUCT_SUMMARY_SELECT}
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
@@ -88,7 +121,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       params
     );
 
-    res.json({ data: rows.map(withResolvedImages) });
+    res.json({ data: rows.map(withCardImages) });
   } catch (err) {
     next(err);
   }
@@ -116,14 +149,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/trending', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT p.*, c.title AS category_title, sc.title AS sub_category_title
+      `SELECT ${PRODUCT_SUMMARY_SELECT}
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
        ORDER BY p.created_at DESC
        LIMIT 10`
     );
-    res.json({ data: rows.map(withResolvedImages) });
+    res.json({ data: rows.map(withCardImages) });
   } catch (err) {
     next(err);
   }
@@ -180,18 +213,21 @@ router.get('/search', async (req: Request, res: Response, next: NextFunction) =>
       return;
     }
 
+    const safeLimit = parsePaginationValue(limit, 20, 50);
+    const safeOffset = parsePaginationValue(offset, 0, 100000);
+
     const { rows } = await pool.query(
-      `SELECT p.*, c.title AS category_title, sc.title AS sub_category_title
+      `SELECT ${PRODUCT_SUMMARY_SELECT}
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
        WHERE p.title ILIKE $1 OR p.brand_name ILIKE $1
        ORDER BY p.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [`%${q}%`, parseInt(limit as string, 10), parseInt(offset as string, 10)]
+      [`%${q}%`, safeLimit, safeOffset]
     );
 
-    res.json({ data: rows.map(withResolvedImages) });
+    res.json({ data: rows.map(withCardImages) });
   } catch (err) {
     next(err);
   }
@@ -304,7 +340,7 @@ router.get('/:id/related', async (req: Request, res: Response, next: NextFunctio
 
     if (sub_category_id) {
       queryText = `
-        SELECT p.*, c.title AS category_title, sc.title AS sub_category_title
+        SELECT ${PRODUCT_SUMMARY_SELECT}
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
         LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
@@ -314,7 +350,7 @@ router.get('/:id/related', async (req: Request, res: Response, next: NextFunctio
       queryParams = [sub_category_id, id];
     } else {
       queryText = `
-        SELECT p.*, c.title AS category_title, sc.title AS sub_category_title
+        SELECT ${PRODUCT_SUMMARY_SELECT}
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
         LEFT JOIN sub_categories sc ON p.sub_category_id = sc.id
@@ -325,7 +361,7 @@ router.get('/:id/related', async (req: Request, res: Response, next: NextFunctio
     }
 
     const { rows } = await pool.query(queryText, queryParams);
-    res.json({ data: rows.map(withResolvedImages) });
+    res.json({ data: rows.map(withCardImages) });
   } catch (err) {
     next(err);
   }
