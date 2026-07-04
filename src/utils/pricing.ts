@@ -93,7 +93,23 @@ export async function validateOrderPricing(
     }
   }
 
-  const calculatedTotal = Math.max(0, subtotal - calculatedCouponDiscount);
+  // Query shipping settings from database
+  const { rows: settingsRows } = await pool.query(
+    "SELECT key, value FROM settings WHERE key IN ('shipping_fee', 'shipping_threshold')"
+  );
+
+  let shippingFee = 0;
+  const shippingFeeSetting = settingsRows.find((r: { key: string }) => r.key === 'shipping_fee');
+  const shippingThresholdSetting = settingsRows.find((r: { key: string }) => r.key === 'shipping_threshold');
+
+  const fee = shippingFeeSetting ? parseFloat(shippingFeeSetting.value as string) : 50;
+  const threshold = shippingThresholdSetting ? parseFloat(shippingThresholdSetting.value as string) : 999;
+
+  if (subtotal < threshold) {
+    shippingFee = fee;
+  }
+
+  const calculatedTotal = Math.max(0, subtotal - calculatedCouponDiscount + shippingFee);
 
   // Compare with client-provided totals (with a 0.05 tolerance for floating-point precision differences)
   const totalDifference = Math.abs(calculatedTotal - clientTotal);
