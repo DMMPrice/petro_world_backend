@@ -5,7 +5,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,
+  google_id TEXT UNIQUE,
+  auth_provider TEXT NOT NULL DEFAULT 'password',
   first_name TEXT,
   last_name TEXT,
   phone TEXT,

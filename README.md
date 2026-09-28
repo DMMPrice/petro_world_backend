@@ -49,6 +49,7 @@ npm install
 Create a `.env` file in the root directory based on the `.env.example` template:
 ```env
 PORT=3002
+GOOGLE_WEB_CLIENT_ID=your-web-oauth-client-id.apps.googleusercontent.com
 NODE_ENV=development
 
 # Database configuration

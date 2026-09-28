@@ -2,10 +2,12 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { requireAuth } from '../middleware/auth';
 
 const router = Router();
+const googleClient = new OAuth2Client();
 const passwordResetCodes = new Map<
   string,
   { codeHash: string; expiresAt: number }
@@ -155,7 +157,7 @@ router.post('/login', authRateLimiter, async (req: Request, res: Response, next:
     }
 
     const user = result.rows[0];
-    const valid = await bcrypt.compare(password, user.password_hash);
+    const valid = Boolean(user.password_hash) && await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       res.status(401).json({ error: 'Invalid email or password' });
       return;
@@ -172,6 +174,91 @@ router.post('/login', authRateLimiter, async (req: Request, res: Response, next:
       user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role },
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Exchange a Google ID token for a Petro World JWT.
+ * The Google token is verified server-side; the client never gets to choose
+ * the user identity or issue its own Petro World session.
+ */
+router.post('/google', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idToken = req.body?.idToken?.toString();
+    const audience = process.env.GOOGLE_WEB_CLIENT_ID;
+
+    if (!idToken || !audience) {
+      res.status(400).json({ error: 'Google sign-in is not configured' });
+      return;
+    }
+
+    const ticket = await googleClient.verifyIdToken({ idToken, audience });
+    const payload = ticket.getPayload();
+
+    if (!payload?.sub || !payload.email || payload.email_verified !== true) {
+      res.status(401).json({ error: 'Invalid Google account' });
+      return;
+    }
+
+    const googleId = payload.sub;
+    const email = payload.email.toLowerCase();
+    const firstName = payload.given_name || payload.name?.split(' ')[0] || '';
+    const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || '';
+    const avatarUrl = payload.picture || null;
+
+    let result = await pool.query(
+      `SELECT id, email, first_name, last_name, role
+       FROM users WHERE google_id = $1`,
+      [googleId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      result = await pool.query(
+        `UPDATE users
+         SET google_id = $1,
+             auth_provider = CASE WHEN auth_provider = 'password' THEN 'password,google' ELSE 'google' END,
+             first_name = COALESCE(NULLIF(first_name, ''), $2),
+             last_name = COALESCE(NULLIF(last_name, ''), $3),
+             avatar_url = COALESCE(avatar_url, $4),
+             updated_at = NOW()
+         WHERE email = $5
+         RETURNING id, email, first_name, last_name, role`,
+        [googleId, firstName, lastName, avatarUrl, email]
+      );
+    }
+
+    if ((result.rowCount ?? 0) === 0) {
+      result = await pool.query(
+        `INSERT INTO users (email, google_id, auth_provider, first_name, last_name, avatar_url)
+         VALUES ($1, $2, 'google', $3, $4, $5)
+         RETURNING id, email, first_name, last_name, role`,
+        [email, googleId, firstName, lastName, avatarUrl]
+      );
+    }
+
+    const user = result.rows[0];
+    const token = jwt.sign(
+      { sub: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET!,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && /Token used too late|Wrong number of segments|Invalid token/i.test(err.message)) {
+      res.status(401).json({ error: 'Invalid or expired Google token' });
+      return;
+    }
     next(err);
   }
 });
@@ -312,7 +399,7 @@ router.post('/change-password', requireAuth, async (req: Request, res: Response,
       return;
     }
 
-    const validPassword = await bcrypt.compare(
+    const validPassword = Boolean(result.rows[0].password_hash) && await bcrypt.compare(
       currentPassword,
       result.rows[0].password_hash
     );
